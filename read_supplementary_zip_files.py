@@ -18,6 +18,9 @@ NR_EXTENSIONS={ "ms_number": 0,"Python":0, "Stata":0, "R":0, "MatLab":0, "C":0, 
 EXTENSIONS={"ms_number": "0", "Python": ".py", "Stata":".do", "R": ".R", "MatLab": ".m", "C": ".c", "Fortran": re.compile(r'[.][f][0-9]{2}'), "Bash": ".sh", "LaTeX": ".tex", "C++": ".cpp", "SAS": ".sas"}
 #extension ids
 
+MANIFESTO={"ms_number": 0, "file_name": 0, "file_type": 0, "file_size": 0}
+#dictionary to help writing in csv
+
 
 def count_extensions(name, extensions, nr_extensions):
     ext=os.path.splitext(name)[1]
@@ -31,6 +34,15 @@ def count_extensions(name, extensions, nr_extensions):
 def reset_extension_nr(extensions):
     for key in extensions:
         extensions[key]=0
+
+def manifesto_maker(file, name, manifesto_dict): 
+    manifesto_dict["file_name"]=os.path.split(name)[1]
+    manifesto_dict["file_type"]=os.path.splitext(name)[1]
+    if type(file)==ZipFile:
+        manifesto_dict["file_size"]=file.getinfo(name).file_size
+    elif type(file)==TarFile:
+        manifesto_dict["file_size"]=file.getmember(name).size
+        #write filename, extesion and file size of files in the zip into dictionary
 
 def tree_in_zip(path, stream=None):
     print('Trying {}'.format(path))
@@ -61,6 +73,8 @@ def tree_in_zip(path, stream=None):
                 for name in zf.namelist(): 
                     count_extensions(name, EXTENSIONS, NR_EXTENSIONS)
                     #Count extensions of interest in the archive.
+                    manifesto_maker(zf, name, MANIFESTO)
+                    #fills in the dictionary
                     if ZIP_FILE.search(name) is not None:
                         print('-Found {}'.format(name))
                         yield from tree_in_zip(path+'/'+name, BytesIO(zf.read(name)))
@@ -76,6 +90,7 @@ def tree_in_zip(path, stream=None):
             #No need for try checked the file at the begining.
                 for name in zf.getnames():
                     count_extensions(name, EXTENSIONS, NR_EXTENSIONS)
+                    manifesto_maker(zf, name, MANIFESTO)
                     if ZIP_FILE.search(name) is not None:
                         print('-Found {}'.format(name))
                         yield from tree_in_zip(path+'/'+name, BytesIO(zf.read(name)))
@@ -91,15 +106,21 @@ def tree_in_zip(path, stream=None):
         pass
     #Because of the .tar checks at the begining could happen that there's no zf defined. This way the loop goes on if found a corrupted archive.
 
-writer = csv.DictWriter(open('MS_language_test.csv', 'w'), fieldnames=list(NR_EXTENSIONS.keys()))
-writer.writeheader()
+ms_language = csv.DictWriter(open('MS_language.csv', 'w'), fieldnames=list(NR_EXTENSIONS.keys()))
+ms_language.writeheader()
+ms_files=csv.DictWriter(open('MS_manifesto.csv', 'w'), fieldnames=list(MANIFESTO.keys()))
+ms_files.writeheader()
+#create 2 separate csvs for the extensions and manifesto
 
 for name in files:
     reset_dictionary(NR_EXTENSIONS)
     #Must reset counting outside the functions, because we write in this loop.
     for entry in tree_in_zip(name):
-        print(entry)
+        MANIFESTO["ms_number"]=MS_ID.search(entry).group()
+        ms_files.writerow(MANIFESTO)
+        print(MANIFESTO)
+        #show the row written in ms_manifesto.csv
     NR_EXTENSIONS["ms_number"]=MS_ID.search(name).group()
     print(NR_EXTENSIONS)
-    #Show the row we write in .csv.
-    writer.writerow(NR_EXTENSIONS)
+    #Show the row written in ms_language.csv.
+    ms_language.writerow(NR_EXTENSIONS)
